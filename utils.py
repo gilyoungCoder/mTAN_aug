@@ -52,7 +52,7 @@ def compute_losses(dim, dec_train_batch, qz0_mean, qz0_logvar, pred_x, args, dev
     return logpx, analytic_kl
 
 
-def evaluate_classifier(model, test_loader, dec=None, args=None, classifier=None,
+def  evaluate_classifier(model, trans, test_loader, dec=None, args=None, classifier=None,
                         dim=41, device='cuda', reconst=False, num_sample=1):
     pred = []
     true = []
@@ -63,7 +63,7 @@ def evaluate_classifier(model, test_loader, dec=None, args=None, classifier=None
         observed_data, observed_mask, observed_tp \
             = test_batch[:, :, :dim], test_batch[:, :, dim:2*dim], test_batch[:, :, -1]
         with torch.no_grad():
-            out = model(
+            out, query = model(
                 torch.cat((observed_data, observed_mask), 2), observed_tp)
             if reconst:
                 qz0_mean, qz0_logvar = out[:, :,
@@ -78,7 +78,13 @@ def evaluate_classifier(model, test_loader, dec=None, args=None, classifier=None
                     #pred_x = pred_x.view(num_sample, batch_len, pred_x.shape[1], pred_x.shape[2])
                     out = classifier(pred_x)
                 else:
-                    out = classifier(z0)
+                    # query 1 x 128 x 128
+                    query_expanded = query.repeat(batch_len, 1, 1)         
+                    combined_z0 = torch.cat((z0, query_expanded), dim=2)   
+                    # print(f"combined_z0: {combined_z0.shape}")
+                    z1 = trans(combined_z0)
+                    # print(f"z1: {z1.shape}") z1: torch.Size([50, 256, 20])
+                    out = classifier(z1)
             if args.classify_pertp:
                 N = label.size(-1)
                 out = out.view(-1, N)

@@ -16,7 +16,8 @@ from setmodels import *
 # from torch.utils.tensorboard import SummaryWriter
 # experiment_id = 'classification'
 # writer = SummaryWriter('runs/experiment_' + experiment_id)
-
+import vessl
+vessl.init()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--niters', type=int, default=2000)
@@ -93,7 +94,10 @@ if __name__ == '__main__':
     
     aug = SetTransformer(dim_input=83, num_outputs=406, dim_output=83).to(device)    
     
-    classifier = models.create_classifier(args.latent_dim, args.rec_hidden).to(device)
+    set_trans = SetTransformer(dim_input=128+args.latent_dim, num_outputs=256, dim_output= 148).to(device)
+
+    classifier = models.create_classifier(148, args.rec_hidden).to(device)
+    
     params = (list(rec.parameters()) + list(dec.parameters()) + list(classifier.parameters()))
     print('parameters:', utils.count_parameters(rec), utils.count_parameters(dec), utils.count_parameters(classifier))
     optimizer = optim.Adam(params, lr=args.lr)
@@ -138,12 +142,26 @@ if __name__ == '__main__':
             augmented_data, augmented_mask, augmented_tp \
                 = train_batch[:, :, :dim], train_batch[:, :, dim:2*dim], train_batch[:, :, -1]
             
-            out = rec(torch.cat((augmented_data, augmented_mask), 2), augmented_tp)
+            # out = rec(torch.cat((augmented_data, augmented_mask), 2), augmented_tp)
+            # qz0_mean, qz0_logvar = out[:, :, :args.latent_dim], out[:, :, args.latent_dim:]
+            # epsilon = torch.randn(args.k_iwae, qz0_mean.shape[0], qz0_mean.shape[1], qz0_mean.shape[2]).to(device)
+            # z0 = epsilon * torch.exp(.5 * qz0_logvar) + qz0_mean
+            # z0 = z0.view(-1, qz0_mean.shape[1], qz0_mean.shape[2])
+            # pred_y = classifier(z0)
+            
+            out, query = rec(torch.cat((augmented_data, augmented_mask), 2), augmented_tp)
             qz0_mean, qz0_logvar = out[:, :, :args.latent_dim], out[:, :, args.latent_dim:]
             epsilon = torch.randn(args.k_iwae, qz0_mean.shape[0], qz0_mean.shape[1], qz0_mean.shape[2]).to(device)
             z0 = epsilon * torch.exp(.5 * qz0_logvar) + qz0_mean
             z0 = z0.view(-1, qz0_mean.shape[1], qz0_mean.shape[2])
-            pred_y = classifier(z0)
+            # query 1 x 128 x 128
+            query_expanded = query.repeat(batch_len, 1, 1)         
+            combined_z0 = torch.cat((z0, query_expanded), dim=2)   
+            # print(f"combined_z0: {combined_z0.shape}")
+            z1 = set_trans(combined_z0)
+            # print(f"z1: {z1.shape}") z1: torch.Size([50, 256, 20])
+            pred_y = classifier(z1)
+            
             # print(f"z0: {z0.shape}, out: {out.shape}, observed_data: {observed_data.shape}, observed_tp: {observed_tp.shape}, pred_y: {pred_y.shape}")
             pred_x = dec(
                 z0, observed_tp[None, :, :].repeat(args.k_iwae, 1, 1).view(-1, observed_tp.shape[1]))
@@ -169,8 +187,11 @@ if __name__ == '__main__':
             
         total_time += time.time() - start_time
         val_loss, val_acc, val_auc = utils.evaluate_classifier(
-            rec, val_loader, args=args, classifier=classifier, reconst=True, num_sample=1, dim=dim)
-        
+            rec, set_trans, val_loader, args=args, classifier=classifier, reconst=True, num_sample=1, dim=dim)
+        # VesslBoard에 검증 데이터 로그 기록 (검증 루프 후)
+        vessl.log(step = itr, payload ={'Loss/Val': val_loss,
+                                        'Accuracy/Val': val_acc,
+                                        'AUC/Val': val_auc})
         if val_loss <= best_val_loss:
             best_val_loss = min(best_val_loss, val_loss)
             rec_state_dict = rec.state_dict()
@@ -178,7 +199,7 @@ if __name__ == '__main__':
             classifier_state_dict = classifier.state_dict()
             optimizer_state_dict = optimizer.state_dict()
         test_loss, test_acc, test_auc = utils.evaluate_classifier(
-            rec, test_loader, args=args, classifier=classifier, reconst=True, num_sample=1, dim=dim)
+            rec, set_trans, test_loader, args=args, classifier=classifier, reconst=True, num_sample=1, dim=dim)
         print('Iter: {}, recon_loss: {:.4f}, ce_loss: {:.4f}, acc: {:.4f}, mse: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}, test_acc: {:.4f}, test_auc: {:.4f}'
               .format(itr, train_recon_loss/train_n, train_ce_loss/train_n, 
                       train_acc/train_n, mse/train_n, val_loss, val_acc, test_acc, test_auc))

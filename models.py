@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from setmodels import *
+
 
 class create_classifier(nn.Module):
  
@@ -97,6 +97,7 @@ class enc_mtan_rnn(nn.Module):
             nn.Linear(2*nhidden, 50),
             nn.ReLU(),
             nn.Linear(50, latent_dim * 2))
+
         if learn_emb:
             self.periodic = nn.Linear(1, embed_time-1)
             self.linear = nn.Linear(1, 1)
@@ -134,7 +135,7 @@ class enc_mtan_rnn(nn.Module):
         out = self.att(query, key, x, mask)
         out, _ = self.gru_rnn(out)
         out = self.hiddens_to_z0(out)
-        return out
+        return out, query
     
     
 class dec_mtan_rnn(nn.Module):
