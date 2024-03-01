@@ -98,8 +98,8 @@ if __name__ == '__main__':
     
     classifier = models.create_classifier(args.latent_dim, args.rec_hidden).to(device)
     
-    params = (list(rec.parameters()) + list(dec.parameters()) + list(classifier.parameters()))
-    print('parameters:', utils.count_parameters(rec), utils.count_parameters(dec), utils.count_parameters(classifier))
+    params = (list(rec.parameters()) + list(dec.parameters()) + list(classifier.parameters()) + list(aug.parameters()))
+    print('parameters:', utils.count_parameters(rec), utils.count_parameters(dec), utils.count_parameters(classifier), utils.count_parameters(aug))
     optimizer = optim.Adam(params, lr=args.lr)
     criterion = nn.CrossEntropyLoss()
     
