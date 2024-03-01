@@ -127,6 +127,11 @@ if __name__ == '__main__':
         else:
             kl_coef = 1
         start_time = time.time()
+        
+        # random_number = random.random()
+        # if random_number < 0.:
+        print(f"set transformer key : {aug.dec[0].S.data}")
+            
         for train_batch, label in train_loader:
             train_batch, label = train_batch.to(device), label.to(device)
             batch_len  = train_batch.shape[0]
@@ -140,8 +145,9 @@ if __name__ == '__main__':
                 = train_batch[:, :, :dim], train_batch[:, :, dim:2*dim], train_batch[:, :, -1]
             
             augmented_data, augmented_mask, augmented_tp \
-                = train_batch[:, :, :dim], train_batch[:, :, dim:2*dim], train_batch[:, :, -1]
-            
+                = train_aug[:, :, :dim], train_aug[:, :, dim:2*dim], train_aug[:, :, -1]
+        
+
             # out = rec(torch.cat((augmented_data, augmented_mask), 2), augmented_tp)
             # qz0_mean, qz0_logvar = out[:, :, :args.latent_dim], out[:, :, args.latent_dim:]
             # epsilon = torch.randn(args.k_iwae, qz0_mean.shape[0], qz0_mean.shape[1], qz0_mean.shape[2]).to(device)
