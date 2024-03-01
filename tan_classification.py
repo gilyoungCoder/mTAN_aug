@@ -52,6 +52,8 @@ parser.add_argument('--enc-num-heads', type=int, default=1)
 parser.add_argument('--dec-num-heads', type=int, default=1)
 parser.add_argument('--num-ref-points', type=int, default=128)
 parser.add_argument('--classify-pertp', action='store_true')
+parser.add_argument('--aug-ratio', type=int, default=2)
+
 args = parser.parse_args()
 
 
@@ -75,7 +77,7 @@ if __name__ == '__main__':
     test_loader = data_obj["test_dataloader"]
     val_loader = data_obj["val_dataloader"]
     dim = data_obj["input_dim"]
-    print(f"dim: {dim}")
+    num_tp = data_obj["num_tp"]
     # if args.enc == 'enc_rnn3':
     #     rec = models.enc_rnn3(
     #         dim, torch.linspace(0, 1., 128), args.latent_dim, args.rec_hidden, 128, learn_emb=args.learn_emb).to(device)
@@ -92,11 +94,9 @@ if __name__ == '__main__':
         dim, torch.linspace(0, 1., args.num_ref_points), args.latent_dim, args.gen_hidden, 
         embed_time=128, learn_emb=args.learn_emb, num_heads=args.dec_num_heads).to(device)
     
-    aug = SetTransformer(dim_input=83, num_outputs=406, dim_output=83).to(device)    
+    aug = SetTransformer(dim_input=83, num_outputs=args.aug_ratio*num_tp, dim_output=83).to(device)    
     
-    set_trans = SetTransformer(dim_input=128+args.latent_dim, num_outputs=256, dim_output= 148).to(device)
-
-    classifier = models.create_classifier(148, args.rec_hidden).to(device)
+    classifier = models.create_classifier(args.latent_dim, args.rec_hidden).to(device)
     
     params = (list(rec.parameters()) + list(dec.parameters()) + list(classifier.parameters()))
     print('parameters:', utils.count_parameters(rec), utils.count_parameters(dec), utils.count_parameters(classifier))
@@ -149,18 +149,13 @@ if __name__ == '__main__':
             # z0 = z0.view(-1, qz0_mean.shape[1], qz0_mean.shape[2])
             # pred_y = classifier(z0)
             
-            out, query = rec(torch.cat((augmented_data, augmented_mask), 2), augmented_tp)
+            out = rec(torch.cat((augmented_data, augmented_mask), 2), augmented_tp)
             qz0_mean, qz0_logvar = out[:, :, :args.latent_dim], out[:, :, args.latent_dim:]
             epsilon = torch.randn(args.k_iwae, qz0_mean.shape[0], qz0_mean.shape[1], qz0_mean.shape[2]).to(device)
             z0 = epsilon * torch.exp(.5 * qz0_logvar) + qz0_mean
             z0 = z0.view(-1, qz0_mean.shape[1], qz0_mean.shape[2])
-            # query 1 x 128 x 128
-            query_expanded = query.repeat(batch_len, 1, 1)         
-            combined_z0 = torch.cat((z0, query_expanded), dim=2)   
-            # print(f"combined_z0: {combined_z0.shape}")
-            z1 = set_trans(combined_z0)
-            # print(f"z1: {z1.shape}") z1: torch.Size([50, 256, 20])
-            pred_y = classifier(z1)
+            pred_y = classifier(z0)
+            
             
             # print(f"z0: {z0.shape}, out: {out.shape}, observed_data: {observed_data.shape}, observed_tp: {observed_tp.shape}, pred_y: {pred_y.shape}")
             pred_x = dec(
@@ -187,7 +182,7 @@ if __name__ == '__main__':
             
         total_time += time.time() - start_time
         val_loss, val_acc, val_auc = utils.evaluate_classifier(
-            rec, set_trans, val_loader, args=args, classifier=classifier, reconst=True, num_sample=1, dim=dim)
+            rec, val_loader, args=args, classifier=classifier, reconst=True, num_sample=1, dim=dim)
         # VesslBoard에 검증 데이터 로그 기록 (검증 루프 후)
         vessl.log(step = itr, payload ={'Loss/Val': val_loss,
                                         'Accuracy/Val': val_acc,
@@ -199,7 +194,7 @@ if __name__ == '__main__':
             classifier_state_dict = classifier.state_dict()
             optimizer_state_dict = optimizer.state_dict()
         test_loss, test_acc, test_auc = utils.evaluate_classifier(
-            rec, set_trans, test_loader, args=args, classifier=classifier, reconst=True, num_sample=1, dim=dim)
+            rec, test_loader, args=args, classifier=classifier, reconst=True, num_sample=1, dim=dim)
         print('Iter: {}, recon_loss: {:.4f}, ce_loss: {:.4f}, acc: {:.4f}, mse: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}, test_acc: {:.4f}, test_auc: {:.4f}'
               .format(itr, train_recon_loss/train_n, train_ce_loss/train_n, 
                       train_acc/train_n, mse/train_n, val_loss, val_acc, test_acc, test_auc))

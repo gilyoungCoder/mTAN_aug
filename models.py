@@ -135,7 +135,7 @@ class enc_mtan_rnn(nn.Module):
         out = self.att(query, key, x, mask)
         out, _ = self.gru_rnn(out)
         out = self.hiddens_to_z0(out)
-        return out, query
+        return out
     
     
 class dec_mtan_rnn(nn.Module):

@@ -52,7 +52,7 @@ def compute_losses(dim, dec_train_batch, qz0_mean, qz0_logvar, pred_x, args, dev
     return logpx, analytic_kl
 
 
-def  evaluate_classifier(model, trans, test_loader, dec=None, args=None, classifier=None,
+def evaluate_classifier(model, test_loader, dec=None, args=None, classifier=None,
                         dim=41, device='cuda', reconst=False, num_sample=1):
     pred = []
     true = []
@@ -63,7 +63,7 @@ def  evaluate_classifier(model, trans, test_loader, dec=None, args=None, classif
         observed_data, observed_mask, observed_tp \
             = test_batch[:, :, :dim], test_batch[:, :, dim:2*dim], test_batch[:, :, -1]
         with torch.no_grad():
-            out, query = model(
+            out = model(
                 torch.cat((observed_data, observed_mask), 2), observed_tp)
             if reconst:
                 qz0_mean, qz0_logvar = out[:, :,
@@ -78,13 +78,7 @@ def  evaluate_classifier(model, trans, test_loader, dec=None, args=None, classif
                     #pred_x = pred_x.view(num_sample, batch_len, pred_x.shape[1], pred_x.shape[2])
                     out = classifier(pred_x)
                 else:
-                    # query 1 x 128 x 128
-                    query_expanded = query.repeat(batch_len, 1, 1)         
-                    combined_z0 = torch.cat((z0, query_expanded), dim=2)   
-                    # print(f"combined_z0: {combined_z0.shape}")
-                    z1 = trans(combined_z0)
-                    # print(f"z1: {z1.shape}") z1: torch.Size([50, 256, 20])
-                    out = classifier(z1)
+                    out = classifier(z0)
             if args.classify_pertp:
                 N = label.size(-1)
                 out = out.view(-1, N)
@@ -152,6 +146,7 @@ def get_physionet_data(args, device, q, flag=1):
     record_id, tt, vals, mask, labels = train_data[0]
 
     # n_samples = len(total_dataset) 특성 숫자/텐서의 마지막 차원
+    num_tp = tt.size(-1)
     input_dim = vals.size(-1)
     data_min, data_max = get_data_min_max(total_dataset, device)
     batch_size = min(min(len(train_dataset_obj), args.batch_size), args.n)
@@ -205,6 +200,7 @@ def get_physionet_data(args, device, q, flag=1):
                     "n_test_batches": len(test_dataloader),
                     "attr": attr_names,  # optional
                     "classif_per_tp": False,  # optional
+                    "num_tp" : num_tp,
                     "n_labels": 1}  # optional
     if args.classif:
         val_dataloader = DataLoader(
