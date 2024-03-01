@@ -128,9 +128,6 @@ if __name__ == '__main__':
             kl_coef = 1
         start_time = time.time()
         
-        # random_number = random.random()
-        # if random_number < 0.:
-        print(f"set transformer key : {aug.dec[0].S.data}")
             
         for train_batch, label in train_loader:
             train_batch, label = train_batch.to(device), label.to(device)
